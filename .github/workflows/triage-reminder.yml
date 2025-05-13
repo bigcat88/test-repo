@@ -15,9 +15,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 🛎️ Check out the code so we can read your config
       - name: Check out repo
         uses: actions/checkout@v3
 
+      # 📖 Load the "triage" block from your YAML config
       - name: Read triage config
         id: cfg
         uses: jbutcher5/read-yaml@1.6
@@ -25,89 +27,87 @@ jobs:
           file: .github/issue-bot-config.yml
           key-path: '["triage"]'
 
-      # 3️⃣ find all open, un-labelled issues older than first_ping_after_days
+      # 🔍 Find open issues updated before “since” (no longer restricting to unlabeled)
       - name: Find stale issues
         id: search
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // parse the triage config (we know it's valid JSON here)
             const cfg = JSON.parse(process.env.CFG || '{}');
-            // compute the "cutoff" timestamp
             const since = new Date(
               Date.now() - cfg.first_ping_after_days * 24*3600*1000
             ).toISOString();
 
-            // search for open issues with NO labels, updated before "since"
+            // NOTE: removed "no:label" so we catch reminder-1, reminder-2, etc.
             const q = [
               `repo:${context.repo.owner}/${context.repo.repo}`,
               `is:issue is:open`,
-              `no:label`,
               `updated:<${since}`
             ].join(' ');
+
             const res = await github.rest.search.issuesAndPullRequests({
               q, per_page: 100
             });
 
-            // pull out just the numbers
-            const nums = res.data.items.map(i => i.number);
-            core.setOutput("issues", JSON.stringify(nums));
+            core.setOutput("issues", JSON.stringify(
+              res.data.items.map(i => i.number)
+            ));
 
         env:
-          # bring the raw JSON string from the read-yaml step into JS
-          CFG:    ${{ steps.cfg.outputs.data }}
+          CFG: ${{ steps.cfg.outputs.data }}
 
-      - name: Ping & label
+      # 📨 Ping & rotate reminder-N
+      - name: Ping & rotate labels
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // Safely parse both env-vars; fall back to empty array / object
+            // Safe parse
             const issues = JSON.parse(process.env.ISSUES || '[]');
             const cfg    = JSON.parse(process.env.CFG    || '{}');
 
             for (const num of issues) {
-              // fetch the live issue
               const { data: issue } = await github.rest.issues.get({
-                ...context.repo, issue_number: num
+                ...context.repo,
+                issue_number: num
               });
 
-              // skip if it’s been updated more recently than repeat_every_days
+              // ❌ Skip if any label is NOT a "reminder-N"
+              const labels = issue.labels.map(l => l.name);
+              if (labels.some(n => !/^reminder-\d+$/.test(n))) continue;
+
+              // ⏱️ Enforce repeat_every_days
               const cutoff = new Date(
                 Date.now() - cfg.repeat_every_days * 24*3600*1000
               );
               if (new Date(issue.updated_at) > cutoff) continue;
 
-              // figure out which "round" we're on
-              const remLabel = issue.labels.find(l => l.name.startsWith('reminder-'));
-              const current  = remLabel
-                ? parseInt(remLabel.name.split('-')[1], 10)
-                : 0;
+              // 🔢 Compute next round
+              const remLabel = labels.find(n => /^reminder-\d+$/.test(n));
+              const current  = remLabel ? parseInt(remLabel.split('-')[1],10) : 0;
               const next     = current + 1;
 
-              // build an escalation line once we hit that configured round
+              // 🚨 Escalate mentions once we hit the threshold
               const mention = next >= cfg.escalation_ping
-                ? '\n\n' + cfg.escalation_mentions.join(' ')
+                ? '\n\n' + (cfg.escalation_mentions || []).join(' ')
                 : '';
 
-              // post the friendly reminder
+              // 💬 Post the reminder
               await github.rest.issues.createComment({
                 ...context.repo,
                 issue_number: num,
                 body: `🔔 Friendly reminder – please triage this issue.${mention}`
               });
 
-              // remove the old reminder label, if any
+              // 🏷️ Rotate the label
               if (remLabel) {
                 await github.rest.issues.removeLabel({
                   ...context.repo,
                   issue_number: num,
-                  name: remLabel.name
-                }).catch(() => {});
+                  name: remLabel
+                }).catch(()=>{/* ignore if already gone */});
               }
-
-              // add the new one
               await github.rest.issues.addLabels({
                 ...context.repo,
                 issue_number: num,
