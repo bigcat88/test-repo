@@ -16,7 +16,7 @@ jobs:
       - name: Load question config via yq
         id: cfg
         run: |
-          QUESTION=$(yq eval -o=json '.question' .github/issue-bot-config.yml)
+          QUESTION=$(yq eval -o=json '.question' .github/triage-issue-bot-config.yml)
           echo "question=$QUESTION" >> $GITHUB_OUTPUT
 
       - name: Remove stale labels
