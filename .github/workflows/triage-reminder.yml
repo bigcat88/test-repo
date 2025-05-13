@@ -14,12 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - name: Read triage config
+      - name: Load triage config via yq
         id: cfg
-        uses: jbutcher5/read-yaml@1.6
-        with:
-          file: .github/triage-issue-bot-config.yml
-          key-path: '["triage"]'
+        run: |
+          TRIAGE=$(yq eval -o=json '.triage' .github/triage-issue-bot-config.yml)
+          printf "triage<<EOF\n%s\nEOF\n" "$TRIAGE" >> $GITHUB_OUTPUT
 
       - name: Find stale issues
         id: search
@@ -27,12 +26,11 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const cfg = JSON.parse(process.env.CFG || '{}');
+            const cfg = JSON.parse(process.env.INPUT_TRIAGE || '{}');
             const since = new Date(
               Date.now() - cfg.first_ping_after_days * 24*3600*1000
             ).toISOString();
 
-            // NOTE: removed "no:label" so we catch reminder-1, reminder-2, etc.
             const q = [
               `repo:${context.repo.owner}/${context.repo.repo}`,
               `is:issue is:open`,
@@ -42,63 +40,53 @@ jobs:
             const res = await github.rest.search.issuesAndPullRequests({
               q, per_page: 100
             });
-
-            core.setOutput("issues", JSON.stringify(
+            core.setOutput('issues', JSON.stringify(
               res.data.items.map(i => i.number)
             ));
-
         env:
-          CFG: ${{ steps.cfg.outputs.data }}
+          INPUT_TRIAGE: ${{ steps.cfg.outputs.triage }}
 
       - name: Ping & rotate labels
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // Safe parse
             const issues = JSON.parse(process.env.ISSUES || '[]');
-            const cfg    = JSON.parse(process.env.CFG    || '{}');
+            const cfg    = JSON.parse(process.env.INPUT_TRIAGE || '{}');
 
             for (const num of issues) {
               const { data: issue } = await github.rest.issues.get({
-                ...context.repo,
-                issue_number: num
+                ...context.repo, issue_number: num
               });
 
-              // ❌ Skip if any label is NOT a "reminder-N"
               const labels = issue.labels.map(l => l.name);
               if (labels.some(n => !/^reminder-\d+$/.test(n))) continue;
 
-              // ⏱️ Enforce repeat_every_days
               const cutoff = new Date(
                 Date.now() - cfg.repeat_every_days * 24*3600*1000
               );
               if (new Date(issue.updated_at) > cutoff) continue;
 
-              // 🔢 Compute next round
               const remLabel = labels.find(n => /^reminder-\d+$/.test(n));
               const current  = remLabel ? parseInt(remLabel.split('-')[1],10) : 0;
               const next     = current + 1;
 
-              // 🚨 Escalate mentions once we hit the threshold
               const mention = next >= cfg.escalation_ping
                 ? '\n\n' + (cfg.escalation_mentions || []).join(' ')
                 : '';
 
-              // 💬 Post the reminder
               await github.rest.issues.createComment({
                 ...context.repo,
                 issue_number: num,
                 body: `🔔 Friendly reminder – please triage this issue.${mention}`
               });
 
-              // 🏷️ Rotate the label
               if (remLabel) {
                 await github.rest.issues.removeLabel({
                   ...context.repo,
                   issue_number: num,
                   name: remLabel
-                }).catch(()=>{/* ignore if already gone */});
+                }).catch(() => {});
               }
               await github.rest.issues.addLabels({
                 ...context.repo,
@@ -107,5 +95,5 @@ jobs:
               });
             }
         env:
-          ISSUES: ${{ steps.search.outputs.issues }}
-          CFG:    ${{ steps.cfg.outputs.data }}
+          ISSUES:       ${{ steps.search.outputs.issues }}
+          INPUT_TRIAGE: ${{ steps.cfg.outputs.triage }}
