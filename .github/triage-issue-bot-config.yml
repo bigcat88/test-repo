@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2025 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: MIT
 triage:
   first_ping_after_days: 0    # days to triage without reminder
   repeat_every_days: 0        # repeat reminder after X days
