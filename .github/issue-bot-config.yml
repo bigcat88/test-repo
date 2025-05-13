@@ -1,14 +1,13 @@
 triage:
-  first_ping_after_days: 7    # days to triage without reminder
-  repeat_every_days: 7        # repeat reminder after X dats
+  first_ping_after_days: 0    # days to triage without reminder
+  repeat_every_days: 0        # repeat reminder after X dats
   escalation_ping: 2          # number of reminders to escalate
   escalation_mentions:
     - "@bigcat88"
     - "@oleksandr-nc"
 
 question:
-  reminder_after_days: 7
-  close_after_days: 21        # total time since label was added
+  reminder_after_days: 0
   missing_info_label: "missing information"
   maintainers_allowlist:      # their comments DO NOT clear the label
     - "bigcat88"
