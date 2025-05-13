@@ -3,7 +3,7 @@ triage:
   repeat_every_days: 0        # repeat reminder after X days
   escalation_ping: 3          # on which reminder it will be escalated
   escalation_mentions:
-    - "@DaphneMuller"
+    - "@bigcat88"             # put someone like your team leader here
 
 question:
   reminder_after_days: 0      # days to remove "question" tag, and apply tag to mark issue as available to close.
