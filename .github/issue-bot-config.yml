@@ -7,7 +7,7 @@ triage:
     - "@oleksandr-nc"
 
 question:
-  reminder_after_days: 0
+  reminder_after_days: 1
   missing_info_label: "missing information"
   maintainers_allowlist:      # their comments DO NOT clear the label
     - "bigcat88"
