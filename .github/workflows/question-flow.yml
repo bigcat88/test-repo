@@ -1,9 +1,8 @@
-# .github/workflows/question-flow.yml
 name: Flag stale “question” issues with “missing information”
 
 on:
   schedule:
-    - cron: '30 8 * * *'        # daily
+    - cron: '30 8 * * *'       # daily at 08:30 UTC
   workflow_dispatch:
 
 permissions:
@@ -13,50 +12,61 @@ permissions:
 jobs:
   mark-stale:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/read-yaml@v1
+      - uses: actions/checkout@v3
+
+      - name: Read question config
         id: cfg
+        uses: jbutcher5/read-yaml@1.6
         with:
           file: .github/issue-bot-config.yml
-          property-path: question      # ⇦ gets the block above
+          key-path: '["question"]'
 
-      - name: Scan & label
+      - name: Label stale question issues
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const cfg = JSON.parse(process.env.CFG);
-
-            // 1. open issues that still carry the “question” label
-            const res = await github.paginate(
-              github.rest.issues.listForRepo,
-              { ...context.repo, labels: 'question', state: 'open', per_page: 100 }
-            );
+            // fetch all open issues with the "question" label
+            const { data: issues } = await github.rest.issues.listForRepo({
+              ...context.repo,
+              labels: 'question',
+              state: 'open',
+              per_page: 100
+            });
 
             const now = Date.now();
-            for (const issue of res) {
-              // 2. most recent *human* activity (creation counts)
-              const events = await github.paginate(
-                github.rest.issues.listEventsForTimeline,
-                { ...context.repo, issue_number: issue.number, per_page: 100 }
-              );
-              const lastHuman = events
+            for (const issue of issues) {
+              // get last human comment time (or creation)
+              const events = await github.rest.issues.listEventsForTimeline({
+                ...context.repo,
+                issue_number: issue.number,
+                per_page: 100
+              });
+              const humans = events.data
                 .filter(e => e.event === 'commented' && !e.actor.type.includes('Bot'))
-                .map(e => new Date(e.created_at).getTime())
-                .sort((a,b)=>b-a)[0] || new Date(issue.created_at).getTime();
+                .map(e => new Date(e.created_at).getTime());
+              const lastHuman = humans.length
+                ? Math.max(...humans)
+                : new Date(issue.created_at).getTime();
 
-              const ageDays = (now - lastHuman)/(24*3600*1000);
+              const ageDays = (now - lastHuman) / (24*3600*1000);
 
-              // 3. after N days, swap labels and walk away
               if (ageDays >= cfg.reminder_after_days) {
+                // swap labels
                 await github.rest.issues.removeLabel({
-                  ...context.repo, issue_number: issue.number, name: 'question'
-                }).catch(()=>{});
-
+                  ...context.repo,
+                  issue_number: issue.number,
+                  name: 'question'
+                }).catch(() => {});
                 await github.rest.issues.addLabels({
-                  ...context.repo, issue_number: issue.number,
+                  ...context.repo,
+                  issue_number: issue.number,
                   labels: [cfg.missing_info_label]
                 });
               }
             }
         env:
-          CFG: ${{ steps.cfg.outputs }}
+          CFG: ${{ steps.cfg.outputs.data }}
