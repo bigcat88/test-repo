@@ -14,20 +14,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - name: Read question config
+      - name: Load question config via yq
         id: cfg
-        uses: jbutcher5/read-yaml@1.6
-        with:
-          file: .github/triage-issue-bot-config.yml
-          key-path: '["question"]'
+        run: |
+          QUESTION=$(yq eval -o=json '.question' .github/triage-issue-bot-config.yml)
+          printf "question<<EOF\n%s\nEOF\n" "$QUESTION" >> $GITHUB_OUTPUT
 
       - name: Label stale question issues
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const cfg = JSON.parse(process.env.CFG);
-            // fetch all open issues with the "question" label
+            const cfg = JSON.parse(process.env.INPUT_QUESTION || '{}');
             const { data: issues } = await github.rest.issues.listForRepo({
               ...context.repo,
               labels: 'question',
@@ -37,7 +35,6 @@ jobs:
 
             const now = Date.now();
             for (const issue of issues) {
-              // get last human comment time (or creation)
               const events = await github.rest.issues.listEventsForTimeline({
                 ...context.repo,
                 issue_number: issue.number,
@@ -49,11 +46,9 @@ jobs:
               const lastHuman = humans.length
                 ? Math.max(...humans)
                 : new Date(issue.created_at).getTime();
-
               const ageDays = (now - lastHuman) / (24*3600*1000);
 
               if (ageDays >= cfg.reminder_after_days) {
-                // swap labels
                 await github.rest.issues.removeLabel({
                   ...context.repo,
                   issue_number: issue.number,
@@ -67,4 +62,4 @@ jobs:
               }
             }
         env:
-          CFG: ${{ steps.cfg.outputs.data }}
+          INPUT_QUESTION: ${{ steps.cfg.outputs.question }}
