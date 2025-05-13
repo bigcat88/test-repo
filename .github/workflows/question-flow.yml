@@ -1,0 +1,62 @@
+# .github/workflows/question-flow.yml
+name: Flag stale “question” issues with “missing information”
+
+on:
+  schedule:
+    - cron: '30 8 * * *'        # daily
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  mark-stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/read-yaml@v1
+        id: cfg
+        with:
+          file: .github/issue-bot-config.yml
+          property-path: question      # ⇦ gets the block above
+
+      - name: Scan & label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const cfg = JSON.parse(process.env.CFG);
+
+            // 1. open issues that still carry the “question” label
+            const res = await github.paginate(
+              github.rest.issues.listForRepo,
+              { ...context.repo, labels: 'question', state: 'open', per_page: 100 }
+            );
+
+            const now = Date.now();
+            for (const issue of res) {
+              // 2. most recent *human* activity (creation counts)
+              const events = await github.paginate(
+                github.rest.issues.listEventsForTimeline,
+                { ...context.repo, issue_number: issue.number, per_page: 100 }
+              );
+              const lastHuman = events
+                .filter(e => e.event === 'commented' && !e.actor.type.includes('Bot'))
+                .map(e => new Date(e.created_at).getTime())
+                .sort((a,b)=>b-a)[0] || new Date(issue.created_at).getTime();
+
+              const ageDays = (now - lastHuman)/(24*3600*1000);
+
+              // 3. after N days, swap labels and walk away
+              if (ageDays >= cfg.reminder_after_days) {
+                await github.rest.issues.removeLabel({
+                  ...context.repo, issue_number: issue.number, name: 'question'
+                }).catch(()=>{});
+
+                await github.rest.issues.addLabels({
+                  ...context.repo, issue_number: issue.number,
+                  labels: [cfg.missing_info_label]
+                });
+              }
+            }
+        env:
+          CFG: ${{ steps.cfg.outputs }}
