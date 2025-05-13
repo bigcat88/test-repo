@@ -1,4 +1,4 @@
-name: Auto-clear “question” & “missing information” when reporter replies
+name: Clear "question" & "missing information"
 
 on:
   issue_comment:
@@ -11,19 +11,17 @@ jobs:
   clear-labels:
     if: github.event.issue.state == 'open'
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
-
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - name: Read question config
         id: cfg
         uses: jbutcher5/read-yaml@1.6
         with:
-          file: .github/issue-bot-config.yml
+          file: .github/triage-issue-bot-config.yml
           key-path: '["question"]'
 
       - name: Remove labels if commenter not in allow-list
-        uses: actions/github-script@v7
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

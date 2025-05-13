@@ -1,9 +1,8 @@
-# .github/workflows/triage-reminder.yml
 name: Issue triage reminders
 
 on:
   schedule:
-    - cron: '0 8 * * *'    # daily at 08:00 UTC
+    - cron: '0 2 * * *'  # 02:00 UTC daily
   workflow_dispatch:
 
 permissions:
@@ -13,24 +12,18 @@ permissions:
 jobs:
   remind:
     runs-on: ubuntu-latest
-
     steps:
-      # 🛎️ Check out the code so we can read your config
-      - name: Check out repo
-        uses: actions/checkout@v3
-
-      # 📖 Load the "triage" block from your YAML config
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - name: Read triage config
         id: cfg
         uses: jbutcher5/read-yaml@1.6
         with:
-          file: .github/issue-bot-config.yml
+          file: .github/triage-issue-bot-config.yml
           key-path: '["triage"]'
 
-      # 🔍 Find open issues updated before “since” (no longer restricting to unlabeled)
       - name: Find stale issues
         id: search
-        uses: actions/github-script@v7
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -57,9 +50,8 @@ jobs:
         env:
           CFG: ${{ steps.cfg.outputs.data }}
 
-      # 📨 Ping & rotate reminder-N
       - name: Ping & rotate labels
-        uses: actions/github-script@v7
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

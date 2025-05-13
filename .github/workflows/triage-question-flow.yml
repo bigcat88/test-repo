@@ -1,8 +1,8 @@
-name: Flag stale “question” issues with “missing information”
+name: Flag stale "question" issues
 
 on:
   schedule:
-    - cron: '30 8 * * *'       # daily at 08:30 UTC
+    - cron: '0 2 * * *'  # 02:00 UTC daily
   workflow_dispatch:
 
 permissions:
@@ -12,19 +12,17 @@ permissions:
 jobs:
   mark-stale:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
-
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - name: Read question config
         id: cfg
         uses: jbutcher5/read-yaml@1.6
         with:
-          file: .github/issue-bot-config.yml
+          file: .github/triage-issue-bot-config.yml
           key-path: '["question"]'
 
       - name: Label stale question issues
-        uses: actions/github-script@v7
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
